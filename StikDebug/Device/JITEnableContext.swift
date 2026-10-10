@@ -9,6 +9,46 @@ import Foundation
 import idevice
 import Darwin
 
+final class RemotePairingPortResolver: NSObject, NetServiceBrowserDelegate, NetServiceDelegate {
+    static let fallback: UInt16 = 49152
+    private let browser = NetServiceBrowser()
+    private var services: [NetService] = []
+    private var port: UInt16?
+
+    static func resolve(timeout: TimeInterval = 4) -> UInt16 {
+        let gate = DispatchSemaphore(value: 0)
+        let worker = RemotePairingPortResolver()
+        DispatchQueue.global(qos: .utility).async {
+            worker.search(timeout: timeout)
+            gate.signal()
+        }
+        guard gate.wait(timeout: .now() + timeout + 1) == .success else { return fallback }
+        return worker.port ?? fallback
+    }
+
+    private func search(timeout: TimeInterval) {
+        browser.delegate = self
+        browser.schedule(in: .current, forMode: .default)
+        browser.searchForServices(ofType: "_remotepairing._tcp.", inDomain: "local.")
+        let end = Date().addingTimeInterval(timeout)
+        while port == nil && Date() < end {
+            _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        }
+        browser.stop()
+        services.forEach { $0.stop() }
+    }
+
+    func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
+        services.append(service)
+        service.delegate = self
+        service.resolve(withTimeout: 3)
+    }
+
+    func netServiceDidResolveAddress(_ sender: NetService) {
+        if (1...65535).contains(sender.port) { port = UInt16(sender.port) }
+    }
+}
+
 typealias LogFunc = (String?) -> Void
 typealias DebugAppCallback = (_ pid: Int32, _ debugProxy: OpaquePointer?, _ remoteServer: OpaquePointer?, _ semaphore: DispatchSemaphore) -> Void
 typealias SyslogLineHandler = (String) -> Void
@@ -169,7 +209,9 @@ final class JITEnableContext {
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(49152).bigEndian
+        let remotePairingPort = RemotePairingPortResolver.resolve()
+        NSLog("[StikDebug] Remote Pairing endpoint %@:%u", DeviceConnectionContext.targetIPAddress, remotePairingPort)
+        addr.sin_port = in_port_t(remotePairingPort).bigEndian
 
         let deviceIP = DeviceConnectionContext.targetIPAddress
         let parseResult = deviceIP.withCString { inet_pton(AF_INET, $0, &addr.sin_addr) }
