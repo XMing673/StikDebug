@@ -1,0 +1,75 @@
+name: Build StikDebug Dynamic RSD IPA
+
+on:
+  push:
+    branches:
+      - fix/dynamic-remotepairing-port
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Checkout patched fork
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Print Xcode and SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build unsigned device app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project StikDebug.xcodeproj \
+            -scheme StikDebug \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/StikDebugDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build 2>&1 | tee "$RUNNER_TEMP/stikdebug-build.log"
+
+      - name: Package IPA for SideStore signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/StikDebugDerivedData/Build/Products/Release-iphoneos/StikDebug.app"
+          test -d "$app"
+          test -f "$app/StikDebug"
+          stage="$(mktemp -d)"
+          mkdir -p "$stage/Payload" dist
+          ditto "$app" "$stage/Payload/StikDebug.app"
+          (cd "$stage" && zip -qry "$GITHUB_WORKSPACE/dist/StikDebug-dynamic-rsd.ipa" Payload)
+          unzip -t dist/StikDebug-dynamic-rsd.ipa | tail -1
+          ls -lh dist/*.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: StikDebug-dynamic-rsd-ipa
+          path: dist/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload compilation log if failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StikDebug-build-log
+          path: ${{ runner.temp }}/stikdebug-build.log
+          if-no-files-found: ignore
+          retention-days: 7
