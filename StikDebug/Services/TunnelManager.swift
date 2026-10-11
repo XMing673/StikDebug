@@ -129,7 +129,7 @@ func markTunnelDisconnected() {
 }
 
 private func tunnelConnectionLogMessage(for error: NSError) -> String {
-    let target = "\(DeviceConnectionContext.targetIPAddress):\(RemotePairingPortResolver.fallback)"
+    let target = RemotePairingPortResolver.lastAttemptDescription
     return "Tunnel connection failed for \(target): \(error.localizedDescription) (Domain: \(error.domain), Code: \(error.code), Raw: \(String(describing: error)))"
 }
 
@@ -193,7 +193,7 @@ private func tunnelConnectionAlertMessage(for error: NSError) -> String {
     return """
     \(likelyCause)
 
-    Target: \(targetIP):\(RemotePairingPortResolver.fallback)
+    Target attempted: \(RemotePairingPortResolver.lastAttemptDescription)
     Expected LocalDevVPN IP: \(DeviceConnectionContext.defaultTargetIPAddress)
 
     Try this:
