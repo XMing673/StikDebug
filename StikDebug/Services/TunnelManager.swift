@@ -157,6 +157,14 @@ private func tunnelConnectionAlertMessage(for error: NSError) -> String {
             "Reconnect Wi-Fi and LocalDevVPN, then try again.",
             "If this keeps happening, select a fresh pairing file."
         ]
+    } else if error.code == 16 || lowercasedMessage.contains("device socket io failed") {
+        likelyCause = "The Remote Pairing tunnel could not connect to the selected endpoint."
+        recoverySteps = [
+            "Check the Target attempted line below (including whether Bonjour or fallback selected the port).",
+            "In SideStore Network Discovery, find the _remotepairing._tcp service port.",
+            "If it differs, set Settings > Advanced > Remote Pairing Port to SideStore's discovered port, then reconnect.",
+            "If the addresses and ports already match, check LocalDevVPN routing and the pairing file."
+        ]
     } else if error.code == -18 || lowercasedMessage.contains("parse target ip") {
         likelyCause = "The configured target IP address is not valid."
         recoverySteps = [
